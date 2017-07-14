@@ -17,7 +17,7 @@ const setOfExt = new Set([
 const server = http.createServer();
 
 server.on('request', (request, response) => {
-    util.log('user with IP: '+ request.connection.remoteAddress + ' connected;');
+    util.log('request from IP: '+ request.connection.remoteAddress + ', method: '+ request.method + ';');
     if (request.method === 'GET')
         processGet(request, response, (err, file) => {
             if (err === 404) {
@@ -52,6 +52,12 @@ server.on('request', (request, response) => {
 function processGet(request, response, callback) {
     //Parsing uri for path
     let uri = url.parse(request.url).pathname;
+    //Hiding backend files
+    if (uri.indexOf('/backend/') === 0) {
+        callback(404);
+        response.end();
+        return;
+    }
     //Set filename from root directory
     let filename = path.join(process.cwd(), uri);
     fs.exists(filename, (exists) => {
