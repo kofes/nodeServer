@@ -17,7 +17,7 @@ const setOfExt = new Set([
     '.jpg', '.png', '.mp4',
     '.mp3', '.gif', ''
     ]);
-const server = http.createServer();
+const server = http.createServer(/*config.ssl*/);
 const pool = new pg.Pool(config.sql);
 
 server.on('request', (request, response) => {
