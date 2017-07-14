@@ -13,17 +13,26 @@ let countSteps = 30;
 let opacitySpeed = 0.02;
 let appearanceSpeed = 0.01;
 let validated = [true, true, true];
+const nextPage = {
+    'sign_in': 'sign_in.html',
+    'sign_up': 'sign_in.html',
+    'reset_passwd': 'sign_in.html',
+    'send_email': 'sign_in.html'
+};
+const pages = {
+    'sign up': 'sign_up.html',
+    'sign in': 'sign_in.html',
+    'reset passwd': 'reset_passwd.html',
+    'send email': 'send_email.html'
+};
 
 window.onload = () => {
     document.getElementById('enter').onsubmit = () => {
         let isValidateOk = validated[0]&&validated[1]&&validated[2];
-        if (isValidateOk) {
-            moveUpIntervalId = setInterval(moveUp, 5, document.getElementById('layer'));
-            return validated[0]&&validated[1]&&validated[2];
-        }
-        return false;
+        if (isValidateOk) loadAjax('sign in');
+        return isValidateOk;
     }
-    signIn();
+    loadAjax('sign in');
 }
 function moveUp (element, page) {
     if (opacity['input'] <= 0 ||
@@ -34,16 +43,17 @@ function moveUp (element, page) {
             validated[i] = true;
         document.getElementById('layer').style.marginBottom = marginBottom;
         //
-        let client = new XMLHttpRequest();
-        client.open('GET', page, false);
-        client.send();
-        document.getElementById('enter').innerHTML = client.responseText;
-        //
-        frameSpeed = (document.getElementById('layer').offsetTop + document.getElementById('layer').offsetHeight)/countSteps;
-        opacitySpeed = 1/countSteps;
-        document.getElementById('overlay').style.display = 'none';
-        appearanceIntervalId = setInterval(appearance, 10);
-        //
+        let promise = promiseXhr(page)
+        .then(data => {
+            document.getElementById('enter').innerHTML = data;
+            frameSpeed = (document.getElementById('layer').offsetTop + document.getElementById('layer').offsetHeight)/countSteps;
+            opacitySpeed = 1/countSteps;
+            document.getElementById('overlay').style.display = 'none';
+            appearanceIntervalId = setInterval(appearance, 10);
+        })
+        .catch(error => {
+            console.log(error);
+        });
         clearInterval(moveUpIntervalId);
         return;
     }
@@ -80,18 +90,28 @@ function setOpacity() {
 
     document.getElementById('layer').style.borderColor = 'rgba(255, 255, 255, '+opacity['layerBorder']+')';
 }
-function signIn() {
-    moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), 'sign_in.html');
+function promiseXhr(page) {
+    return new Promise((resolve, reject) => {
+        let xhr = new XMLHttpRequest();
+        xhr.open('GET', page);
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status <= 300)
+                resolve(xhr.response);
+            else
+                reject(xhr.statusText);
+        };
+        xhr.onerror = () => reject(xhr.statusText);
+        xhr.send();
+    });
 }
-function signUp() {
-    moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), 'sign_up.html');
+function loadAjax(cmd) {
+    console.log(cmd);
+    let page = '404';
+    if (cmd in pages)
+        page = pages[cmd];
+    moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), page);
 }
-function sendEmail() {
-    moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), 'send_email.html');
-}
-function resetPasswd() {
-    moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), 'reset_passwd.html');
-}
+//Form validation
 function validateEmail(elem) {
     let re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     validated[0] = re.test(elem.value);

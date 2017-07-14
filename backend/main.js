@@ -8,15 +8,17 @@ const util = require('util');
 const formidable = require('formidable');
 const port = 8080;
 
+const config = require('./config.js');
 const mailer = require('./mailer.js');
+const pg = require('pg');
 
 const setOfExt = new Set([
     '.html', '.js', '.css',
     '.jpg', '.png', '.mp4',
     '.mp3', '.gif', ''
     ]);
-
 const server = http.createServer();
+const pool = new pg.Pool(config.sql);
 
 server.on('request', (request, response) => {
     util.log('request from "'+ request.connection.remoteAddress + '", method: '+ request.method + ';');
