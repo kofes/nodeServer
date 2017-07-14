@@ -34,15 +34,15 @@ window.onload = () => {
     }
     loadAjax('sign in');
 }
-function moveUp (element, page) {
-    if (opacity['input'] <= 0 ||
-        marginBottom >= frameSpeed*countSteps) {
-        //Because setInterval is async
+function loadAjax(cmd) {
+    console.log(cmd);
+    let page = (cmd in pages) ? pages[cmd] : '404.md';
+    promiseMoveUp(page)
+    .then(() => {
         marginBottom = 0;
         for (var i = 0; i < validated.length; i++)
             validated[i] = true;
         document.getElementById('layer').style.marginBottom = marginBottom;
-        //
         let promise = promiseXhr(page)
         .then(data => {
             document.getElementById('enter').innerHTML = data;
@@ -54,7 +54,32 @@ function moveUp (element, page) {
         .catch(error => {
             console.log(error);
         });
+    });
+}
+function promiseXhr(page) {
+    return new Promise((resolve, reject) => {
+        let xhr = new XMLHttpRequest();
+        xhr.open('GET', page);
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status <= 300)
+                resolve(xhr.response);
+            else
+                reject(xhr.statusText);
+        };
+        xhr.onerror = () => reject(xhr.statusText);
+        xhr.send();
+    });
+}
+function promiseMoveUp(page) {
+    return new Promise((resolve, reject) => {
+        moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), page, resolve);
+    });
+}
+function moveUp (element, page, resolve) {
+    if (opacity['input'] <= 0 ||
+        marginBottom >= frameSpeed*countSteps) {
         clearInterval(moveUpIntervalId);
+        resolve();
         return;
     }
     element.style.marginBottom = (marginBottom += frameSpeed) + 'px';
@@ -89,27 +114,6 @@ function setOpacity() {
     document.getElementById('enter').style.opacity = opacity['enter'];
 
     document.getElementById('layer').style.borderColor = 'rgba(255, 255, 255, '+opacity['layerBorder']+')';
-}
-function promiseXhr(page) {
-    return new Promise((resolve, reject) => {
-        let xhr = new XMLHttpRequest();
-        xhr.open('GET', page);
-        xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status <= 300)
-                resolve(xhr.response);
-            else
-                reject(xhr.statusText);
-        };
-        xhr.onerror = () => reject(xhr.statusText);
-        xhr.send();
-    });
-}
-function loadAjax(cmd) {
-    console.log(cmd);
-    let page = '404';
-    if (cmd in pages)
-        page = pages[cmd];
-    moveUpIntervalId = setInterval(moveUp, 10, document.getElementById('layer'), page);
 }
 //Form validation
 function validateEmail(elem) {
