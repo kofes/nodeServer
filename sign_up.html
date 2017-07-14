@@ -1,17 +1,36 @@
-<form id="enter" action="" method="post" enctype="multipart/form-data">
-    <div class="container">
-        <h3>email:</h3>
-        <input type="text" placeholder="Enter email" name="email" required />
-        <h3>nickname:</h3>
-        <input type="text" placeholder="Enter nickname" name="nickname" required />
-        <h3>password:</h3>
-        <input type="password" placeholder="Enter password" name="passwd" required />
-        <h3>repeat password:</h3>
-        <input type="password" placeholder="Enter password" name="repeated_passwd" required /><br/>
-        <button type="submit" name="sign_up">Sign up</button>
-    </div>
-    <div class="container">
-        <button type="button" id="sign_in" onclick="signIn()">Sign in</button>
-        <span id="fogot_passwd"><a href="#" onclick="resetPasswd()"><p>Fogot password?</p></a></span>
-    </div>
-</form>
+<div class="container">
+    <h3>email:</h3>
+    <input type="text"
+           placeholder="Enter email"
+           name="email"
+           onchange="validateEmail(this)"
+           required />
+    <h3>nickname:</h3>
+    <input type="text"
+           placeholder="Enter nickname"
+           name="nickname"
+           onchange="validateNickname(this)"
+           required />
+    <h3>password:</h3>
+    <input type="password"
+           placeholder="Enter password"
+           name="passwd"
+           onchange="validatePasswd(this)"
+           required />
+    <h3>repeat password:</h3>
+        <input type="password"
+               placeholder="Enter password"
+               name="repeated_passwd"
+               onchange="validatePasswd(this)"
+               required />
+    <br/>
+    <button type="submit"
+            name="type"
+            value="sign_up">Sign up</button>
+</div>
+<div class="container">
+    <button type="button"
+            id="sign_in"
+            onclick="signIn()">Sign in</button>
+    <span id="fogot_passwd"><a href="#" onclick="sendEmail()"><p>Fogot password?</p></a></span>
+</div>

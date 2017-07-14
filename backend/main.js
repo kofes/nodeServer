@@ -8,6 +8,8 @@ const util = require('util');
 const formidable = require('formidable');
 const port = 8080;
 
+const mailer = require('./mailer.js');
+
 const setOfExt = new Set([
     '.html', '.js', '.css',
     '.jpg', '.png', '.mp4',
@@ -17,7 +19,7 @@ const setOfExt = new Set([
 const server = http.createServer();
 
 server.on('request', (request, response) => {
-    util.log('request from IP: '+ request.connection.remoteAddress + ', method: '+ request.method + ';');
+    util.log('request from "'+ request.connection.remoteAddress + '", method: '+ request.method + ';');
     if (request.method === 'GET')
         processGet(request, response, (err, file) => {
             if (err === 404) {
@@ -42,6 +44,11 @@ server.on('request', (request, response) => {
             }
             response.writeHead(200, {'content-type': 'text/plain'});
             response.write('received the data:\n\n');
+            if (fields['type'] === 'send_email')
+                mailer.sendMail(fields['email'], '', 'Reset password', (err, info) => {
+                    if (err) return util.log('Mailer error:\n' + err);
+                    util.log('Email sent to' + fields['email'] + ':\n' + info.response);
+                });
             response.end(util.inspect({
                 fields: fields,
                 files: files
