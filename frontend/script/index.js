@@ -125,7 +125,7 @@ function verify() {
     return new Promise((resolve, reject) => {
         let xhr = new XMLHttpRequest();
         xhr.open('POST', 'submit')
-        xhr.setRequestHeader('content-type', 'application/json; charset=utf-8');
+        xhr.setRequestHeader('content-type', 'application/json');
         xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status <= 300)
                 resolve(xhr);
@@ -143,10 +143,17 @@ function verify() {
     .catch(xhr => {
         if (xhr.status == 400) {
             switch (xhr.response) {
-                case 'sign up':
-                case 'send email':
+                case 'email not valid':
+                case 'email not exists':
                     document.getElementsByName('email')[0].style.boxShadow = '0 0 5px red';
                 return;
+                case 'password not valid':
+                    let passwds = document.getElementsByName('passwd');
+                    for (let i = 0; i < passwds.length; ++i)
+                        passwds[i].style.boxShadow = '0 0 5px red';
+                return;
+                case 'nickname not valid':
+                    document.getElementsByName('nickname')[0].style.boxShadow = '0 0 5px red';
                 case 'sign in':
                     document.getElementsByName('email')[0].style.boxShadow = '0 0 5px red';
                     document.getElementsByName('passwd')[0].style.boxShadow = '0 0 5px red';
@@ -156,20 +163,4 @@ function verify() {
         }
         document.getElementById('enter').innerHTML = xhr.response;
     });
-}
-//Form validation
-function validateEmail(elem) {
-    let re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
-    validated[0] = re.test(elem.value);
-    elem.style.boxShadow = (!validated[0]) ? '0 0 5px red' : 'none';
-}
-function validatePasswd(elem) {
-    let re = /^(?=.*[0-9])(?=.*[A-Z])(?=.*[a-z])[a-zA-Z0-9_]{6,16}$/;
-    validated[1] = re.test(elem.value);
-    elem.style.boxShadow = (!validated[1]) ? '0 0 5px red' : 'none';
-}
-function validateNickname(elem) {
-    let re = /^[^0-9]\w+$/;
-    validated[2] = re.test(elem.value);
-    elem.style.boxShadow = (!validated[2]) ? '0 0 5px red' : 'none';
 }

@@ -1,251 +1,248 @@
 'use strict';
 
-const http = require('http');
+const express = require('express');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
 const formidable = require('formidable');
 const pg = require('pg');
+const crypto = require('crypto');
 const port = 8080;
 
 const config = require('./config.js');
 const mailer = require('./mailer.js');
 const crypt = require('./crypt.js');
 
-const setOfExt = new Set([
-    '.html', '.js', '.css',
-    '.jpg', '.png', '.mp4',
-    '.mp3', '.gif', ''
-    ]);
-const verifyInfoPage = 'verifyInfo.html';
+const verifyInfoPage = 'templates/verifyInfo.html';
 
-const server = http.createServer(/*config.ssl*/);
+const server = express();
 const pool = new pg.Pool(config.sql);
 
-server.on('request', (request, response) => {
-    util.log('request from "'+ request.connection.remoteAddress + '", method: '+ request.method + ';');
-    if (request.method === 'GET')
-        processGet(request, response, (err, file) => {
-            switch (err) {
-                case 404: err404(response); return;
-                case undefined: case null: break;
-                default: err500(err, response); return;
-            }
-            response.writeHead(200);
-            response.write(file, 'binary');
-            response.end();
-        });
-    else if (request.method == 'POST')
-        processPost(request, response, (err, fields, files) => {
-            if (err) {
-                response.writeHead(413, {'content-type':'text/plain'});
-                response.write('Error: ' + err);
-                response.end();
-                return;
-            } else if (!('type' in fields)) {err400(undefined, response); return;}
-            switch (fields.type) {
-                case 'send email': sendEmail(request, response, fields); break;
-                case 'sign up': signUp(request, response, fields); break;
-                case 'sign in': signIn(request, response, fields); break;
-                default: err400(undefined, response); break;
-            }
-        });
+server.use(express.static('frontend'));
+server.use(express.static('templates/index'));
+
+server.use(cookieParser());
+server.use(session(config.session));
+
+server.post('/submit', (request, response) => {
+    //Only json forms
+    if (request.get('content-type') !== 'application/json')
+        return err400('Wrong content-type: application/json only accepted', response);
+    let queryData = '';
+    let form = new formidable.IncomingForm();
+    form.parse(request, (err, fields, files) => {
+        if (err)
+            return response.status(413).send(err);
+        if (!('type' in fields))
+            return err400(undefined, response);
+        switch (fields.type) {
+            case 'send email': processSendEmail(request, response, fields); break;
+            case 'sign up': processSignUp(request, response, fields); break;
+            case 'sign in': processSignIn(request, response, fields); break;
+            default: err400(undefined, response); break;
+        }
+    });
 });
 
-pool.query('CREATE TABLE IF NOT EXISTS users('+
+server.get('/password/reset/:hash', processCreateResetPassword);
+server.post('/password/reset/:hash', processResetPassword);
+
+pool.query(
+    'CREATE TABLE IF NOT EXISTS users('+
     'id INTEGER PRIMARY KEY,'+
     'email VARCHAR(320) UNIQUE NOT NULL,'+
     'nickname VARCHAR(40) NOT NULL,'+
     'passwd VARCHAR(64) NOT NULL,'+
     'level INTEGER DEFAULT 1,'+
     'xp INTEGER DEFAULT 0,'+
-    'coin INTEGER DEFAULT 0'+
+    'coin INTEGER DEFAULT 0,'+
+    'hash VARCHAR(64) DEFAULT NULL'+
 ')')
 .then(() => {
     server.listen(port, ()=> {
         util.log('Server is listening on ' + port);
     });
+})
+.catch(err => {
+    util.log('Can\'t create/use db users;\n' + err);
 });
 
-function processGet(request, response, callback) {
-    //Parsing uri for path
-    let uri = url.parse(request.url).pathname;
-    //Hiding backend files
-    if (uri.indexOf('/backend/') === 0) {
-        callback(404);
-        response.end();
-        return;
-    }
-    //Set filename from root directory
-    let filename = path.join(process.cwd(), uri);
-    fs.exists(filename, (exists) => {
-        //Check for existing of file
-        if (!exists || !setOfExt.has(path.extname(filename))) {
-            callback(404);
-            response.end();
-            return;
-        }
-        //If filename is name of directory, then redirect to index.html of this dirctory
-        if (fs.statSync(filename).isDirectory()) filename += '/index.html';
-        fs.readFile(filename, 'binary', (err, file) => {
-            //Check for reading of file
-            if (err) {
-                callback(err);
-                response.end();
-                return;
-            }
-            //Send file's content to user
-            callback(undefined, file);
-            response.end();
-        });
-    });
-};
-function processPost(request, response, callback) {
-    let queryData = '';
-    let form = new formidable.IncomingForm();
-
-    if (typeof callback !== 'function') return;
-
-    form.parse(request, (err, fields, files) => {
-        callback(err, fields, files);
-    });
-}
-function sendEmail (request, response, fields) {
+function processSendEmail(request, response, fields) {
     if (!('email' in fields))
         return err400(undefined, response);
-    pool.connect()
-    .then(client => {
-        client.query('SELECT email FROM users WHERE email = $1', [fields.email])
-        .then(res => {
-            if (typeof res === 'undefined' || typeof res.row === 'undefined') {
-                util.log('bad email: ' + fields.email + ';');
-                err400('send email', response);
-                return;
-            }
-            mailer.sendMail(fields.email, '', 'Reset password', (err, info) => {
-                if (err) {
-                    util.log('Mailer error:\n' + err);
-                    return;
-                }
-                util.log('Email sent to ' + fields.email + ':\n' + info.response);
-            });
-            fs.readFile(verifyInfoPage, 'binary', (err, file) => {
-                if (err) {
-                    response.writeHead(200, {'content-type':'text/plain'});
-                    response.write('Verification email was sent to your email');
-                } else {
-                    response.writeHead(200, {'content-type':'text/html'});
-                    response.write(file, 'binary');
-                }
-                response.end();
-            });
-        })
-        .catch(err => {
-            util.log('bad email: ' + fields.email + ';\n' + err + ';');
-            err400(undefined, response);
-        })
-    })
-    .catch(err => {
-        util.log('bad connection;\n' + err + ';');
-        err400(undefined, response);
-    })
-}
-function signUp(request, response, fields) {
-    if (!(('email' in fields) && ('nickname' in fields) &&
-         ('passwd' in fields) && ('repeated_passwd' in fields)))
-        return err400(undefined, response);
-    pool.connect()
-    .then(client => {
-        client.query('SELECT email FROM users WHERE email = $1', [fields.email])
-            .then(res => {
-                if (typeof res !== 'undefined') {
-                    util.log('email "' + fields.email + '" already exists;');
-                    err400('sign up', response);
-                    return;
-                }
-                let hash = crypt.encrypt(fields.passwd, (err, hash) => {
-                    if (err) util.log('Passwd\'s encryption error: ' + err + ';');
-                    return hash;
-                });
-                if (typeof hash == 'undefined') return err500();
-                client.query('INSERT INTO users(email, nickname, passwd) VALUES($1, $2, $3)',
-                            [fields.email, fields.nickname, hash], (err) => {
-                    if (err) return err500(err, response);
-                });
-            })
-            .catch(err => {
-                util.log('bad email: ' + fields.email + ';\n' + err + ';');
-                err400(err, response);
-            });
-    })
-    .catch(err => {
-        err500(err, response);
-    });
-}
-function signIn(request, response, fields) {
-    if (!(('email' in fields) &&
-        ('passwd' in fields)))
-        return err400(undefined, response);
+    if (!isValidEmail(fields.email)) {
+        util.log('Not valid email: '+ fields.email + ';');
+        return err400('email not valid', response);
+    }
     pool.connect()
     .then(client => {
         client.query('SELECT * FROM users WHERE email = $1', [fields.email])
         .then(res => {
-            if (typeof res === 'undefined') {
-                util.log('email "' + fields.email + '" isn\'t exists;');
-                err400('sign in', response);
-                return;
+            if (typeof res === 'undefined' || typeof res.rows[0] === 'undefined') {
+                util.log('bad email: '+ fields.email + ';');
+                return err400('email not exists', response);
             }
-            crypt.compare(fields.passwd, res.rows[0].passwd, (err, isMatched) => {
-                if (err) {
-                    err500(err, response);
-                    return;
-                }
-                if (!isMatched) {
-                    err400('sign in', response);
-                    return;
-                }
-                //Accept user
+            let userHash = crypto.randomBytes(48, (err,buff) => {
+                if (err)
+                    util.log('user\'s hash encryption error: ' + err + ';');
+                return buff.toString('base64').replace(/\//g, '_').replace(/\+/g, '-');
             });
-        })
-        .catch(err => {
-            util.log('bad email: ' + fields.email + ';\n' + err + ';');
-            err400(err, response);
+            if (typeof userHash == 'undefined')
+                return err500(undefined, response);
+            client.query('UPDATE users SET hash = $1 WHERE email = $2', [userHash, fields.email])
+            .then(res => {
+                let address = request.protocol + '://' + request.get('host') + '/password/reset/' + userHash;
+                let text = 'If you want to reset your password,'+
+                        ' then click on the following link,'+
+                        ' or by copying and pasting it into your browser: '+
+                        address;
+                mailer.sendMail(
+                    res.rows[0].email,     //user's email
+                    'Reset your password', // title
+                    text,
+                    (err, info) => {
+                    if (err) {
+                        client.query('UPDATE users SET hash = NULL WHERE email = $2', [userHash, fields.email]);
+                        return err500(err, response);
+                    }
+                    fs.readFile(verifyInfoPage, 'binary', (err, file) => {
+                        return response.status(200).send(err ? 'Verification email was sent to your email' : file);
+                    });
+                });
+            });
         });
     })
     .catch(err => {
         err500(err, response);
     });
 }
+function processSignUp(request, response, fields) {
+    if (!(('email' in fields) && ('nickname' in fields) &&
+         ('passwd' in fields)))
+        return err400(undefined, response);
+    if (!isValidEmail(fields.email)) {
+        util.log('Not valid email: '+ fields.email + ';');
+        return err400('email not valid', response);
+    }
+    if (!isValidNickname(fields.nickname)) {
+        util.log('Not valid nickname of '+ fields.email + ';');
+        return err400('nickname not valid', response);
+    }
+    if (!isValidPasswd(fields.passwd)) {
+        util.log('Not valid password of '+ fields.email + ';');
+        return err400('password not valid', response);
+    }
+    pool.connect()
+    .then(client => {
+        client.query('SELECT email FROM users WHERE email = $1', [fields.email])
+        .then(res => {
+            if (typeof res !== 'undefined' && typeof res.rows[0] !== 'undefined') {
+                util.log('email "'+ fields.email + '" already exists;');
+                return err400('email already exists', response);
+            }
+            let passwdHash = crypt.encrypt(fields.passwd, (err, hash) => {
+                if (err) util.log('password\'s encryption error: ' + err + ';');
+                return hash;
+            });
+            if (typeof passwdHash === 'undefined')
+                return err500(undefined, response);
+            client.query('INSERT INTO users(email, nickname, passwd) VALUES ($1, $2, $3)',
+                        [fields.email, fields.nickname, passwdHash])
+            .then(res => {
+                //TODO: make session & cookie
+            });
+        });
+    })
+    .catch(err => {
+        err500(err, response);
+    });
+}
+function processSignIn(request, response, fields) {
+    if (!(('email' in fields) &&
+        ('passwd' in fields)))
+        return err400(undefined, response);
+    if (!isValidEmail(fields.email)) {
+        util.log('Not valid email: '+ fields.email + ';');
+        return err400('email not valid', response);
+    }
+    if (!isValidPasswd(fields.passwd)) {
+        util.log('Not valid password of '+ fields.email + ';');
+        return err400('password not valid', response);
+    }
+    pool.connect()
+    .then(client => {
+        client.query('SELECT * FROM users WHERE email = $1', [fields.email])
+        .then(res => {
+            if (typeof res === 'undefined' || typeof res.rows === 'undefined') {
+                util.log('email "' + fields.email + '" isn\'t exists;');
+                return err400('wrong email/password');
+            }
+            crypt.compare(fields.passwd, res.rows[0].passwd, (err, isMatched) => {
+                if (err)
+                    return err500(err, response);
+                if (!isMatched) {
+                    util.log('wrong password from email "' + fields.email + '";');
+                    return err400('wrong email/password');
+                }
+                client.query('UPDATE users SET hash = NULL WHERE email = $1', [fields.email]);
+                //TODO: accept user
+            });
+        });
+    })
+    .catch(err => {
+        err500(err, response);
+    })
+}
+
+function processResetPassword(request, response) {
+    let hash = request.params.hash;
+    pool.connect()
+    .then(client => {
+        client.query('SELECT * FROM users WHERE hash = $1', [hash])
+        .then(res => {
+            if (typeof res === 'undefined' || typeof res.rows == 'undefined') {
+                util.log('Bad hash "' + hash + '" isn\'t exists;');
+                return err400('bad hash');
+            }
+            //TODO: Reseting password
+        })
+    })
+    .catch(err => {
+        err500(err, res);
+    })
+}
+
 function err400(err, res) {
-    res.writeHead(400, {'content-type': 'text/html'});
-    if (err) res.write(err); else
-    res.write(
+    res.status(400).send(err ? err : (
     '<div class="container">'+
         '<h3>Ooops!</h3>'+
         '<h1>400</h1>'+
         '<h4>Server can\'t understand request</h4>'+
-    '</div>');
-    res.end();
+    '</div>'));
 }
 function err500(err, res) {
     if (err) util.log(err.message, err.stack);
-    res.writeHead(500, {'content-type': 'text/html'});
-    res.write(
+    res.status(500).send(
     '<div class="container">'+
         '<h3>Ooops!</h3>'+
         '<h1>500</h1>'+
         '<h4>Server can\'t resolve request</h4>'+
     '</div>');
-    res.end();
 }
-function err404(res) {
-    res.writeHead(404, {'content-type': 'text/html'});
-    res.write(
-    '<div class="container">'+
-        '<h3>Ooops!</h3>'+
-        '<h1>404</h1>'+
-        '<h4>Not found</h4>'+
-    '</div>');
-    res.end();
+
+//Form validation
+function isValidEmail(email) {
+    let re = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    return re.test(email);
+}
+function isValidPasswd(elem) {
+    let re = /^(?=.*[0-9])(?=.*[A-Z])(?=.*[a-z])[a-zA-Z0-9_]{6,16}$/;
+    return re.test(elem);
+}
+function isValidNickname(elem) {
+    let re = /^[^0-9]\w+$/;
+    return re.test(elem);
 }
