@@ -13,12 +13,6 @@ let countSteps = 30;
 let opacitySpeed = 0.02;
 let appearanceSpeed = 0.01;
 let validated = [true, true, true];
-const nextPage = {
-    'sign_in': 'sign_in.html',
-    'sign_up': 'sign_in.html',
-    'reset_passwd': 'sign_in.html',
-    'send_email': 'sign_in.html'
-};
 const pages = {
     'sign up': 'sign_up.html',
     'sign in': 'sign_in.html',
@@ -29,8 +23,8 @@ const pages = {
 window.onload = () => {
     document.getElementById('enter').onsubmit = () => {
         let isValidateOk = validated[0]&&validated[1]&&validated[2];
-        if (isValidateOk) loadAjax('sign in');
-        return isValidateOk;
+        if (isValidateOk) verify();
+        return false;
     }
     loadAjax('sign in');
 }
@@ -114,6 +108,37 @@ function setOpacity() {
     document.getElementById('enter').style.opacity = opacity['enter'];
 
     document.getElementById('layer').style.borderColor = 'rgba(255, 255, 255, '+opacity['layerBorder']+')';
+}
+function verify() {
+    let jsonObj = {};
+    let input = document.getElementsByTagName('input');
+    for (let i = 0; i < input.length; i++)
+        if (input[i].type != 'checkbox')
+            jsonObj[input[i].name] = input[i].value;        
+    jsonObj['type'] = document.getElementsByName('type')[0].value;
+    return new Promise((resolve, reject) => {
+        let xhr = new XMLHttpRequest();
+        xhr.open('POST', 'submit')
+        xhr.setRequestHeader('content-type', 'application/json; charset=utf-8');
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status <= 300)
+                resolve(xhr);
+            else
+                reject(xhr.statusText);
+        }
+        xhr.onerror = () => reject(xhr.statusText);
+        console.log(JSON.stringify(jsonObj));
+        xhr.send(JSON.stringify(jsonObj));
+    })
+    .then(xhr => {
+        console.log(xhr.response);
+        // if (xhr.status == 400) {
+            console.log(xhr.statusText);
+        //Load page if sign in else load ajax
+    })
+    .catch(err => {
+        console.log(err);
+    });
 }
 //Form validation
 function validateEmail(elem) {
