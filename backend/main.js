@@ -47,7 +47,7 @@ server.on('request', (request, response) => {
             switch (fields.type) {
                 case 'send email': sendEmail(request, response, fields); break;
                 case 'sign up': signUp(request, response, fields); break;
-                // case 'sign in': signIn(request, response, fields); break;
+                case 'sign in': signIn(request, response, fields); break;
                 default: err400(undefined, response); break;
             }
         });
@@ -183,42 +183,40 @@ function signUp(request, response, fields) {
         err500(err, response);
     });
 }
-// function signIn(request, response, fields) {
-//     if (!(('email' in fields) &&
-//         ('passwd' in fields)))
-//         return err400(undefined, response);
-//     pool.connect()
-//     .then(client => {
-//         client.query('SELECT * FROM users WHERE email = $1', [fields.email])
-//         .then(res => {
-//             if (typeof res === 'undefined') {
-//                 util.log('email "' + fields.email + '" isn\'t exists;');
-//                 err400('sign in', response);
-//                 return;
-//             }
-//             crypt.compare(fields.passwd, res.rows[0].passwd, (err, isMatched) => {
-//                 if (err) {
-//                     err500(err, response);
-//                     return;
-//                 }
-//                 if (!isMatched) {
-//                     err400('sign in', response);
-//                     return;
-//                 }
-//                 //Accept user
-//                 response.writeHead(200, {'content-type': 'text/html'});
-//                 response.end();
-//             });
-//         })
-//         .catch(err => {
-//             util.log('bad email: ' + fields.email + ';\n' + err + ';');
-//             err400(err, response);
-//         });
-//     })
-//     .catch(err => {
-//         err500(err, response);
-//     });
-// }
+function signIn(request, response, fields) {
+    if (!(('email' in fields) &&
+        ('passwd' in fields)))
+        return err400(undefined, response);
+    pool.connect()
+    .then(client => {
+        client.query('SELECT * FROM users WHERE email = $1', [fields.email])
+        .then(res => {
+            if (typeof res === 'undefined') {
+                util.log('email "' + fields.email + '" isn\'t exists;');
+                err400('sign in', response);
+                return;
+            }
+            crypt.compare(fields.passwd, res.rows[0].passwd, (err, isMatched) => {
+                if (err) {
+                    err500(err, response);
+                    return;
+                }
+                if (!isMatched) {
+                    err400('sign in', response);
+                    return;
+                }
+                //Accept user
+            });
+        })
+        .catch(err => {
+            util.log('bad email: ' + fields.email + ';\n' + err + ';');
+            err400(err, response);
+        });
+    })
+    .catch(err => {
+        err500(err, response);
+    });
+}
 function err400(err, res) {
     res.writeHead(400, {'content-type': 'text/html'});
     if (err) res.write(err); else

@@ -10,8 +10,8 @@ exports.encrypt = (src, callback) => {
     });
 };
 
-exports.compare = (src, data, callback) => {
-    bcrypt.compare(src, data, (err, isMatched) => {
+exports.compare = (src, hash, callback) => {
+    bcrypt.compare(src, hash, (err, isMatched) => {
         return callback(err, isMatched);
     });
 };
