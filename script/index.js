@@ -30,7 +30,10 @@ window.onload = () => {
 }
 function loadAjax(cmd) {
     console.log(cmd);
-    let page = (cmd in pages) ? pages[cmd] : '404.md';
+    let page = pages[cmd];
+    let input = document.getElementsByTagName('input');
+    for (let i = 0; i < input.length; ++i)
+        input[i].style.boxShadow = 'none';
     promiseMoveUp(page)
     .then(() => {
         marginBottom = 0;
@@ -109,6 +112,9 @@ function setOpacity() {
 
     document.getElementById('layer').style.borderColor = 'rgba(255, 255, 255, '+opacity['layerBorder']+')';
 }
+/* Verification of Submit & 
+ * getting new data
+*/
 function verify() {
     let jsonObj = {};
     let input = document.getElementsByTagName('input');
@@ -124,20 +130,31 @@ function verify() {
             if (xhr.status >= 200 && xhr.status <= 300)
                 resolve(xhr);
             else
-                reject(xhr.statusText);
+                reject(xhr);
         }
-        xhr.onerror = () => reject(xhr.statusText);
+        xhr.onerror = () => reject(xhr);
         console.log(JSON.stringify(jsonObj));
         xhr.send(JSON.stringify(jsonObj));
     })
     .then(xhr => {
         console.log(xhr.response);
-        // if (xhr.status == 400) {
-            console.log(xhr.statusText);
         //Load page if sign in else load ajax
     })
-    .catch(err => {
-        console.log(err);
+    .catch(xhr => {
+        if (xhr.status == 400) {
+            switch (xhr.response) {
+                case 'sign up':
+                case 'send email':
+                    document.getElementsByName('email')[0].style.boxShadow = '0 0 5px red';
+                return;
+                case 'sign in':
+                    document.getElementsByName('email')[0].style.boxShadow = '0 0 5px red';
+                    document.getElementsByName('passwd')[0].style.boxShadow = '0 0 5px red';
+                return;
+                default: break;
+            }
+        }
+        document.getElementById('enter').innerHTML = xhr.response;
     });
 }
 //Form validation

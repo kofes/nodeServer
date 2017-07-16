@@ -18,10 +18,6 @@ const setOfExt = new Set([
     '.jpg', '.png', '.mp4',
     '.mp3', '.gif', ''
     ]);
-const typeToProcess = {
-    'send email': sendEmail,
-    'sign up': signUp
-};
 const verifyInfoPage = 'verifyInfo.html';
 
 const server = http.createServer(/*config.ssl*/);
@@ -31,16 +27,13 @@ server.on('request', (request, response) => {
     util.log('request from "'+ request.connection.remoteAddress + '", method: '+ request.method + ';');
     if (request.method === 'GET')
         processGet(request, response, (err, file) => {
-            if (err === 404) {
-                response.writeHead(404, {'Content-type':'text/plain'});
-                response.write('404 NotFound\n');
-            } else if (err) {
-                response.writeHead(500, {'Content-Type': 'text/plain'});
-                response.write(err+'\n');
-            } else {
-                response.writeHead(200);
-                response.write(file, 'binary');
+            switch (err) {
+                case 404: err404(response); return;
+                case undefined: case null: break;
+                default: err500(err, response); return;
             }
+            response.writeHead(200);
+            response.write(file, 'binary');
             response.end();
         });
     else if (request.method == 'POST')
@@ -50,16 +43,20 @@ server.on('request', (request, response) => {
                 response.write('Error: ' + err);
                 response.end();
                 return;
-            } else if (!('type' in fields && fields.type in typeToProcess))
-                return err400();
-            typeToProcess[fields.type](request, response, fields);
+            } else if (!('type' in fields)) {err400(undefined, response); return;}
+            switch (fields.type) {
+                case 'send email': sendEmail(request, response, fields); break;
+                case 'sign up': signUp(request, response, fields); break;
+                // case 'sign in': signIn(request, response, fields); break;
+                default: err400(undefined, response); break;
+            }
         });
 });
 
 pool.query('CREATE TABLE IF NOT EXISTS users('+
     'id INTEGER PRIMARY KEY,'+
     'email VARCHAR(320) UNIQUE NOT NULL,'+
-    'nickname VARCHAR(40) UNIQUE NOT NULL,'+
+    'nickname VARCHAR(40) NOT NULL,'+
     'passwd VARCHAR(64) NOT NULL,'+
     'level INTEGER DEFAULT 1,'+
     'xp INTEGER DEFAULT 0,'+
@@ -112,84 +109,145 @@ function processPost(request, response, callback) {
 
     form.parse(request, (err, fields, files) => {
         callback(err, fields, files);
-        response.end();
     });
 }
 function sendEmail (request, response, fields) {
     if (!('email' in fields))
-        return err400();
-    let query = {
-        text: 'SELECT email FROM users WHERE email = $1',
-        values: [fields.email]
-    };
-    pool.query(query, (err, res) => {
-        if (err) {
-            util.log('bad email: ' + fields.email + ';\n' + err + ';');
-            err400();
-            return;
-        }
-        if (typeof res === 'undefined' || typeof res.row === 'undefined') {
-            util.log('bad email: ' + fields.email + ';');
-            response.writeHead(400, {'content-type':'text/plain'});
-            util.log(response.write());
-            response.end('email');
-            return;
-        }
-        mailer.sendMail(fields.email, '', 'Reset password', (err, info) => {
-            if (err) {
-                util.log('Mailer error:\n' + err);
+        return err400(undefined, response);
+    pool.connect()
+    .then(client => {
+        client.query('SELECT email FROM users WHERE email = $1', [fields.email])
+        .then(res => {
+            if (typeof res === 'undefined' || typeof res.row === 'undefined') {
+                util.log('bad email: ' + fields.email + ';');
+                err400('send email', response);
                 return;
             }
-            util.log('Email sent to ' + fields.email + ':\n' + info.response);
-        });
-        fs.readFile(verifyInfoPage, 'binary', (err, file) => {
-            if (err) {
-                response.writeHead(200, {'content-type':'text/plain'});
-                response.write('Verification email was sent to your email');
-            } else {
-                response.writeHead(200, {'content-type':'text/html'});
-                response.write(file, 'binary');
-            }
-            response.end();
-        });
-    });
+            mailer.sendMail(fields.email, '', 'Reset password', (err, info) => {
+                if (err) {
+                    util.log('Mailer error:\n' + err);
+                    return;
+                }
+                util.log('Email sent to ' + fields.email + ':\n' + info.response);
+            });
+            fs.readFile(verifyInfoPage, 'binary', (err, file) => {
+                if (err) {
+                    response.writeHead(200, {'content-type':'text/plain'});
+                    response.write('Verification email was sent to your email');
+                } else {
+                    response.writeHead(200, {'content-type':'text/html'});
+                    response.write(file, 'binary');
+                }
+                response.end();
+            });
+        })
+        .catch(err => {
+            util.log('bad email: ' + fields.email + ';\n' + err + ';');
+            err400(undefined, response);
+        })
+    })
+    .catch(err => {
+        util.log('bad connection;\n' + err + ';');
+        err400(undefined, response);
+    })
 }
 function signUp(request, response, fields) {
     if (!(('email' in fields) && ('nickname' in fields) &&
          ('passwd' in fields) && ('repeated_passwd' in fields)))
-        return err400();
-    let query = {
-        text: 'SELECT email FROM users WHERE email = $1',
-        values: [fields.email]
-    };
-    pool.query(query)
-    .then(res => {
-        if (typeof res !== 'undefined' || typeof res.row !== 'undefined') {
-            util.log('email "' + fields.email + '" already exists;');
-            return;
-        }
-        let hash = crypt.encrypt(fields.passwd, (err, hash) => {
-            if (err) util.log('Passwd\'s encryption error: ' + err + ';');
-            return hash;
-        });
-        if (typeof hash == 'undefined') return;
-        pool.query('INSERT INTO users(email, nickname, passwd) VALUES($1, $2, $3)',
-                   [fields.email, fields.nickname, hash], (err, result) => {
-            if (err) return err500(err);
-        });
+        return err400(undefined, response);
+    pool.connect()
+    .then(client => {
+        client.query('SELECT email FROM users WHERE email = $1', [fields.email])
+            .then(res => {
+                if (typeof res !== 'undefined') {
+                    util.log('email "' + fields.email + '" already exists;');
+                    err400('sign up', response);
+                    return;
+                }
+                let hash = crypt.encrypt(fields.passwd, (err, hash) => {
+                    if (err) util.log('Passwd\'s encryption error: ' + err + ';');
+                    return hash;
+                });
+                if (typeof hash == 'undefined') return err500();
+                client.query('INSERT INTO users(email, nickname, passwd) VALUES($1, $2, $3)',
+                            [fields.email, fields.nickname, hash], (err) => {
+                    if (err) return err500(err, response);
+                });
+            })
+            .catch(err => {
+                util.log('bad email: ' + fields.email + ';\n' + err + ';');
+                err400(err, response);
+            });
     })
     .catch(err => {
-        util.log('bad email for sign up: ' + fields.email + ';\n' + err + ';');
+        err500(err, response);
     });
 }
-function err400() {
-    response.writeHead(400, {'content-type': 'text/plain'});    
-    response.write('The request could not be understood by the server due to malformed syntax.'+
-                   'The client SHOULD NOT repeat the request without modifications.');
-    response.end();
+// function signIn(request, response, fields) {
+//     if (!(('email' in fields) &&
+//         ('passwd' in fields)))
+//         return err400(undefined, response);
+//     pool.connect()
+//     .then(client => {
+//         client.query('SELECT * FROM users WHERE email = $1', [fields.email])
+//         .then(res => {
+//             if (typeof res === 'undefined') {
+//                 util.log('email "' + fields.email + '" isn\'t exists;');
+//                 err400('sign in', response);
+//                 return;
+//             }
+//             crypt.compare(fields.passwd, res.rows[0].passwd, (err, isMatched) => {
+//                 if (err) {
+//                     err500(err, response);
+//                     return;
+//                 }
+//                 if (!isMatched) {
+//                     err400('sign in', response);
+//                     return;
+//                 }
+//                 //Accept user
+//                 response.writeHead(200, {'content-type': 'text/html'});
+//                 response.end();
+//             });
+//         })
+//         .catch(err => {
+//             util.log('bad email: ' + fields.email + ';\n' + err + ';');
+//             err400(err, response);
+//         });
+//     })
+//     .catch(err => {
+//         err500(err, response);
+//     });
+// }
+function err400(err, res) {
+    res.writeHead(400, {'content-type': 'text/html'});
+    if (err) res.write(err); else
+    res.write(
+    '<div class="container">'+
+        '<h3>Ooops!</h3>'+
+        '<h1>400</h1>'+
+        '<h4>Server can\'t understand request</h4>'+
+    '</div>');
+    res.end();
 }
-function err500(err) {
-    util.log(err.message, err.stack);
-    res.writeHead(500, {'content-type': 'text/plain'});
-    res.end('An error occurred');
+function err500(err, res) {
+    if (err) util.log(err.message, err.stack);
+    res.writeHead(500, {'content-type': 'text/html'});
+    res.write(
+    '<div class="container">'+
+        '<h3>Ooops!</h3>'+
+        '<h1>500</h1>'+
+        '<h4>Server can\'t resolve request</h4>'+
+    '</div>');
+    res.end();
+}
+function err404(res) {
+    res.writeHead(404, {'content-type': 'text/html'});
+    res.write(
+    '<div class="container">'+
+        '<h3>Ooops!</h3>'+
+        '<h1>404</h1>'+
+        '<h4>Not found</h4>'+
+    '</div>');
+    res.end();
 }
