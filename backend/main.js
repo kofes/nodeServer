@@ -47,8 +47,29 @@ server.post('/submit', (request, response) => {
     });
 });
 
-server.get('/password/reset/:hash', processCreateResetPassword);
-server.post('/password/reset/:hash', processResetPassword);
+server.get('/password/reset/:hash', (request, response) => {
+    let hash = request.params.hash;
+    pool.connect()
+    .then(client => {
+        client.query('SELECT * FROM users WHERE hash = $1', [hash])
+        .then(res => {
+            if (typeof res === 'undefined' ||
+                typeof res.rows === 'undefined' ||
+                typeof res.rows[0] === 'undefined') {
+                    util.log('bad hash from IP:' + request.address+';');
+                    return err400('bad hash', response);
+            }
+            util.log('good hash "'+res.rows[0].hash+'" from IP: '+request.address+';');
+            //TODO: Reseting password
+        })
+    })
+    .catch(err => {
+        err500(err, res);
+    });
+});
+server.post('/password/reset/:hash', (request, response) => {
+
+});
 
 pool.query(
     'CREATE TABLE IF NOT EXISTS users('+
@@ -176,16 +197,16 @@ function processSignIn(request, response, fields) {
     .then(client => {
         client.query('SELECT * FROM users WHERE email = $1', [fields.email])
         .then(res => {
-            if (typeof res === 'undefined' || typeof res.rows === 'undefined') {
+            if (typeof res === 'undefined' || typeof res.rows[0] === 'undefined') {
                 util.log('email "' + fields.email + '" isn\'t exists;');
-                return err400('wrong email/password');
+                return err400('wrong email/password', response);
             }
             crypt.compare(fields.passwd, res.rows[0].passwd, (err, isMatched) => {
                 if (err)
                     return err500(err, response);
                 if (!isMatched) {
                     util.log('wrong password from email "' + fields.email + '";');
-                    return err400('wrong email/password');
+                    return err400('wrong email/password', response);
                 }
                 client.query('UPDATE users SET hash = NULL WHERE email = $1', [fields.email]);
                 //TODO: accept user
@@ -196,25 +217,6 @@ function processSignIn(request, response, fields) {
         err500(err, response);
     })
 }
-
-function processResetPassword(request, response) {
-    let hash = request.params.hash;
-    pool.connect()
-    .then(client => {
-        client.query('SELECT * FROM users WHERE hash = $1', [hash])
-        .then(res => {
-            if (typeof res === 'undefined' || typeof res.rows == 'undefined') {
-                util.log('Bad hash "' + hash + '" isn\'t exists;');
-                return err400('bad hash');
-            }
-            //TODO: Reseting password
-        })
-    })
-    .catch(err => {
-        err500(err, res);
-    })
-}
-
 function err400(err, res) {
     res.status(400).send(err ? err : (
     '<div class="container">'+
@@ -239,7 +241,7 @@ function isValidEmail(email) {
     return re.test(email);
 }
 function isValidPasswd(elem) {
-    let re = /^(?=.*[0-9])(?=.*[A-Z])(?=.*[a-z])[a-zA-Z0-9_]{6,16}$/;
+    let re = /^.*(?=.{6,16})(?=.*[a-zA-Z])(?=.*\d).*$/;
     return re.test(elem);
 }
 function isValidNickname(elem) {
